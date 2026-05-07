@@ -1,5 +1,4 @@
 import "dotenv/config";
-
 import express from "express";
 
 import {
@@ -33,7 +32,7 @@ client.on("interactionCreate", async interaction => {
 
       if (!member.bannable) {
         return interaction.reply({
-          content: "Bu kullanıcıyı banlayamıyorum. Rolüm yetersiz olabilir.",
+          content: "Bu kullanıcıyı banlayamıyorum. Bot rolü yetersiz olabilir.",
           ephemeral: true
         });
       }
@@ -49,7 +48,7 @@ client.on("interactionCreate", async interaction => {
 
       if (!member.kickable) {
         return interaction.reply({
-          content: "Bu kullanıcıyı atamıyorum. Rolüm yetersiz olabilir.",
+          content: "Bu kullanıcıyı atamıyorum. Bot rolü yetersiz olabilir.",
           ephemeral: true
         });
       }
@@ -84,7 +83,7 @@ client.on("interactionCreate", async interaction => {
 
       if (!member.moderatable) {
         return interaction.reply({
-          content: "Bu kullanıcıya timeout veremiyorum. Rolüm yetersiz olabilir.",
+          content: "Bu kullanıcıya timeout veremiyorum. Bot rolü yetersiz olabilir.",
           ephemeral: true
         });
       }
@@ -136,9 +135,9 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ embeds: [embed] });
     }
   } catch (error) {
-    console.error(error);
+    console.error("Komut hatası:", error);
 
-    if (interaction.deferred || interaction.replied) {
+    if (interaction.replied || interaction.deferred) {
       return interaction.editReply("Bir hata oluştu.");
     }
 
