@@ -5,274 +5,212 @@ import express from "express";
 import {
   Client,
   GatewayIntentBits,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
-  ChannelType,
-  PermissionFlagsBits
+  PermissionsBitField,
+  EmbedBuilder
 } from "discord.js";
 
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
   ]
 });
-
-const supportRoleIds = process.env.SUPPORT_ROLE_IDS
-  .split(",")
-  .map(id => id.trim())
-  .filter(Boolean);
 
 client.once("ready", () => {
   console.log(`${client.user.tag} aktif!`);
 });
 
-client.on("interactionCreate", async interaction => {
-  try {
+// SA-AS
 
-    // SLASH COMMANDS
+client.on("messageCreate", async message => {
 
-    if (interaction.isChatInputCommand()) {
+  if (message.author.bot) return;
 
-      if (interaction.commandName === "ticket-kur") {
+  const msg = message.content.toLowerCase();
 
-        const embed = new EmbedBuilder()
-          .setTitle("Destek Sistemi")
-          .setDescription(
-            "Destek talebi oluşturmak için aşağıdaki butona bas."
-          )
-          .setColor("Blue");
+  if (msg === "sa") {
+    return message.reply("Aleyküm selam hoş geldin ❤️");
+  }
 
-        const createButton = new ButtonBuilder()
-          .setCustomId("ticket_create")
-          .setLabel("Create Ticket")
-          .setEmoji("📩")
-          .setStyle(ButtonStyle.Primary);
+});
 
-        const row = new ActionRowBuilder()
-          .addComponents(createButton);
+// PING
 
-        return interaction.reply({
-          embeds: [embed],
-          components: [row]
-        });
+client.on("messageCreate", async message => {
 
-      }
+  if (message.author.bot) return;
 
-    }
+  if (message.content === "!ping") {
 
-    // BUTTONS
-
-    if (interaction.isButton()) {
-
-      if (interaction.customId === "ticket_create") {
-
-        const menu = new StringSelectMenuBuilder()
-          .setCustomId("ticket_type_select")
-          .setPlaceholder("Ticket türünü seç")
-          .addOptions(
-
-            new StringSelectMenuOptionBuilder()
-              .setLabel("Destek")
-              .setDescription("Genel destek almak için")
-              .setValue("destek")
-              .setEmoji("🛠️"),
-
-            new StringSelectMenuOptionBuilder()
-              .setLabel("Şikayet")
-              .setDescription("Şikayet ticketı")
-              .setValue("sikayet")
-              .setEmoji("⚠️"),
-
-            new StringSelectMenuOptionBuilder()
-              .setLabel("Yetkili Başvuru")
-              .setDescription("Yetkili başvurusu")
-              .setValue("yetkili")
-              .setEmoji("📝"),
-
-            new StringSelectMenuOptionBuilder()
-              .setLabel("Diğer")
-              .setDescription("Diğer konular")
-              .setValue("diger")
-              .setEmoji("❓")
-
-          );
-
-        const row = new ActionRowBuilder()
-          .addComponents(menu);
-
-        return interaction.reply({
-          content: "Ticket türünü seç:",
-          components: [row],
-          ephemeral: true
-        });
-
-      }
-
-      if (interaction.customId === "ticket_close") {
-
-        await interaction.reply({
-          content: "Ticket 3 saniye içinde kapatılıyor..."
-        });
-
-        setTimeout(() => {
-          interaction.channel.delete().catch(() => {});
-        }, 3000);
-
-        return;
-
-      }
-
-    }
-
-    // SELECT MENU
-
-    if (interaction.isStringSelectMenu()) {
-
-      if (interaction.customId === "ticket_type_select") {
-
-        const ticketType = interaction.values[0];
-
-        const safeUsername = interaction.user.username
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, "");
-
-        const channelName =
-          `ticket-${ticketType}-${safeUsername}`;
-
-        const existingChannel =
-          interaction.guild.channels.cache.find(
-            channel =>
-              channel.name === channelName
-          );
-
-        if (existingChannel) {
-
-          return interaction.reply({
-            content:
-              `Zaten açık bir ticketın var: ${existingChannel}`,
-            ephemeral: true
-          });
-
-        }
-
-        const permissionOverwrites = [
-
-          {
-            id: interaction.guild.id,
-            deny: [
-              PermissionFlagsBits.ViewChannel
-            ]
-          },
-
-          {
-            id: interaction.user.id,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory
-            ]
-          },
-
-          {
-            id: interaction.client.user.id,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ManageChannels
-            ]
-          },
-
-          ...supportRoleIds.map(roleId => ({
-            id: roleId,
-            allow: [
-              PermissionFlagsBits.ViewChannel,
-              PermissionFlagsBits.SendMessages,
-              PermissionFlagsBits.ReadMessageHistory
-            ]
-          }))
-
-        ];
-
-        const channel =
-          await interaction.guild.channels.create({
-
-            name: channelName,
-
-            type: ChannelType.GuildText,
-
-            permissionOverwrites
-
-          });
-
-        const closeButton = new ButtonBuilder()
-          .setCustomId("ticket_close")
-          .setLabel("Ticket Kapat")
-          .setEmoji("🔒")
-          .setStyle(ButtonStyle.Danger);
-
-        const row = new ActionRowBuilder()
-          .addComponents(closeButton);
-
-        const embed = new EmbedBuilder()
-          .setTitle("Ticket Açıldı")
-          .setDescription(
-            `${interaction.user}, destek talebin oluşturuldu.`
-          )
-          .setColor("Green");
-
-        await channel.send({
-
-          content:
-            `${interaction.user} ${supportRoleIds.map(id => `<@&${id}>`).join(" ")}`,
-
-          embeds: [embed],
-
-          components: [row]
-
-        });
-
-        return interaction.reply({
-          content: `Ticket açıldı: ${channel}`,
-          ephemeral: true
-        });
-
-      }
-
-    }
-
-  } catch (error) {
-
-    console.error(error);
-
-    if (interaction.deferred || interaction.replied) {
-
-      return interaction.editReply(
-        "Bir hata oluştu."
-      );
-
-    }
-
-    return interaction.reply({
-      content: "Bir hata oluştu.",
-      ephemeral: true
-    });
+    return message.reply("Pong! 🏓");
 
   }
 
 });
 
+// CLEAR
+
+client.on("messageCreate", async message => {
+
+  if (message.author.bot) return;
+
+  if (!message.content.startsWith("!clear")) return;
+
+  if (
+    !message.member.permissions.has(
+      PermissionsBitField.Flags.ManageMessages
+    )
+  ) {
+
+    return message.reply(
+      "Bu komutu kullanamazsın."
+    );
+
+  }
+
+  const args =
+    message.content.split(" ").slice(1);
+
+  const amount = parseInt(args[0]);
+
+  if (!amount || amount < 1 || amount > 100) {
+
+    return message.reply(
+      "1 ile 100 arasında sayı gir."
+    );
+
+  }
+
+  await message.channel.bulkDelete(amount, true);
+
+  const msg = await message.channel.send(
+    `${amount} mesaj silindi.`
+  );
+
+  setTimeout(() => {
+    msg.delete().catch(() => {});
+  }, 3000);
+
+});
+
+// BAN
+
+client.on("messageCreate", async message => {
+
+  if (message.author.bot) return;
+
+  if (!message.content.startsWith("!ban")) return;
+
+  if (
+    !message.member.permissions.has(
+      PermissionsBitField.Flags.BanMembers
+    )
+  ) {
+
+    return message.reply(
+      "Bu komutu kullanamazsın."
+    );
+
+  }
+
+  const member =
+    message.mentions.members.first();
+
+  if (!member) {
+
+    return message.reply(
+      "Bir kullanıcı etiketle."
+    );
+
+  }
+
+  const reason =
+    message.content.split(" ").slice(2).join(" ")
+    || "Sebep belirtilmedi.";
+
+  await member.ban({ reason });
+
+  const embed = new EmbedBuilder()
+    .setTitle("Kullanıcı Yasaklandı")
+    .setDescription(
+      `${member.user.tag} sunucudan yasaklandı.`
+    )
+    .addFields({
+      name: "Sebep",
+      value: reason
+    })
+    .setColor("Red");
+
+  message.channel.send({
+    embeds: [embed]
+  });
+
+});
+
+// KICK
+
+client.on("messageCreate", async message => {
+
+  if (message.author.bot) return;
+
+  if (!message.content.startsWith("!kick")) return;
+
+  if (
+    !message.member.permissions.has(
+      PermissionsBitField.Flags.KickMembers
+    )
+  ) {
+
+    return message.reply(
+      "Bu komutu kullanamazsın."
+    );
+
+  }
+
+  const member =
+    message.mentions.members.first();
+
+  if (!member) {
+
+    return message.reply(
+      "Bir kullanıcı etiketle."
+    );
+
+  }
+
+  const reason =
+    message.content.split(" ").slice(2).join(" ")
+    || "Sebep belirtilmedi.";
+
+  await member.kick(reason);
+
+  const embed = new EmbedBuilder()
+    .setTitle("Kullanıcı Atıldı")
+    .setDescription(
+      `${member.user.tag} sunucudan atıldı.`
+    )
+    .addFields({
+      name: "Sebep",
+      value: reason
+    })
+    .setColor("Orange");
+
+  message.channel.send({
+    embeds: [embed]
+  });
+
+});
+
 client.login(process.env.TOKEN);
 
-// EXPRESS
+// EXPRESS SERVER
 
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("Bot aktif!");
+  res.send("Moderasyon botu aktif!");
 });
 
 const PORT = process.env.PORT || 3000;
