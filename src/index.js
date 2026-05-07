@@ -5,15 +5,12 @@ import express from "express";
 import {
   Client,
   GatewayIntentBits,
-  PermissionsBitField,
   EmbedBuilder
 } from "discord.js";
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers
   ]
 });
@@ -22,190 +19,137 @@ client.once("ready", () => {
   console.log(`${client.user.tag} aktif!`);
 });
 
-// SA-AS
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-client.on("messageCreate", async message => {
+  try {
+    if (interaction.commandName === "ping") {
+      return interaction.reply("Pong!");
+    }
 
-  if (message.author.bot) return;
+    if (interaction.commandName === "ban") {
+      const user = interaction.options.getUser("kullanici");
+      const member = await interaction.guild.members.fetch(user.id);
 
-  const msg = message.content.toLowerCase();
+      if (!member.bannable) {
+        return interaction.reply({
+          content: "Bu kullanıcıyı banlayamıyorum. Rolüm yetersiz olabilir.",
+          ephemeral: true
+        });
+      }
 
-  if (msg === "sa") {
-    return message.reply("Aleyküm selam hoş geldin ❤️");
+      await member.ban();
+
+      return interaction.reply(`${user.tag} banlandı.`);
+    }
+
+    if (interaction.commandName === "kick") {
+      const user = interaction.options.getUser("kullanici");
+      const member = await interaction.guild.members.fetch(user.id);
+
+      if (!member.kickable) {
+        return interaction.reply({
+          content: "Bu kullanıcıyı atamıyorum. Rolüm yetersiz olabilir.",
+          ephemeral: true
+        });
+      }
+
+      await member.kick();
+
+      return interaction.reply(`${user.tag} atıldı.`);
+    }
+
+    if (interaction.commandName === "clear") {
+      const amount = interaction.options.getInteger("miktar");
+
+      if (amount < 1 || amount > 100) {
+        return interaction.reply({
+          content: "1 ile 100 arasında sayı gir.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.channel.bulkDelete(amount, true);
+
+      return interaction.reply({
+        content: `${amount} mesaj silindi.`,
+        ephemeral: true
+      });
+    }
+
+    if (interaction.commandName === "timeout") {
+      const user = interaction.options.getUser("kullanici");
+      const minutes = interaction.options.getInteger("dakika");
+      const member = await interaction.guild.members.fetch(user.id);
+
+      if (!member.moderatable) {
+        return interaction.reply({
+          content: "Bu kullanıcıya timeout veremiyorum. Rolüm yetersiz olabilir.",
+          ephemeral: true
+        });
+      }
+
+      await member.timeout(minutes * 60 * 1000);
+
+      return interaction.reply(`${user.tag} ${minutes} dakika timeout aldı.`);
+    }
+
+    if (interaction.commandName === "userinfo") {
+      const user = interaction.options.getUser("kullanici") || interaction.user;
+      const member = await interaction.guild.members.fetch(user.id);
+
+      const embed = new EmbedBuilder()
+        .setTitle(`${user.username} Bilgileri`)
+        .setThumbnail(user.displayAvatarURL())
+        .addFields(
+          { name: "ID", value: user.id },
+          {
+            name: "Hesap Oluşturulma",
+            value: `<t:${Math.floor(user.createdTimestamp / 1000)}:F>`
+          },
+          {
+            name: "Sunucuya Katılım",
+            value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:F>`
+          }
+        )
+        .setColor("Blue");
+
+      return interaction.reply({ embeds: [embed] });
+    }
+
+    if (interaction.commandName === "serverinfo") {
+      const guild = interaction.guild;
+
+      const embed = new EmbedBuilder()
+        .setTitle(`${guild.name} Bilgileri`)
+        .setThumbnail(guild.iconURL())
+        .addFields(
+          { name: "Sunucu ID", value: guild.id },
+          { name: "Üye Sayısı", value: `${guild.memberCount}` },
+          {
+            name: "Oluşturulma",
+            value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:F>`
+          }
+        )
+        .setColor("Green");
+
+      return interaction.reply({ embeds: [embed] });
+    }
+  } catch (error) {
+    console.error(error);
+
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply("Bir hata oluştu.");
+    }
+
+    return interaction.reply({
+      content: "Bir hata oluştu.",
+      ephemeral: true
+    });
   }
-
-});
-
-// PING
-
-client.on("messageCreate", async message => {
-
-  if (message.author.bot) return;
-
-  if (message.content === "!ping") {
-
-    return message.reply("Pong! 🏓");
-
-  }
-
-});
-
-// CLEAR
-
-client.on("messageCreate", async message => {
-
-  if (message.author.bot) return;
-
-  if (!message.content.startsWith("!clear")) return;
-
-  if (
-    !message.member.permissions.has(
-      PermissionsBitField.Flags.ManageMessages
-    )
-  ) {
-
-    return message.reply(
-      "Bu komutu kullanamazsın."
-    );
-
-  }
-
-  const args =
-    message.content.split(" ").slice(1);
-
-  const amount = parseInt(args[0]);
-
-  if (!amount || amount < 1 || amount > 100) {
-
-    return message.reply(
-      "1 ile 100 arasında sayı gir."
-    );
-
-  }
-
-  await message.channel.bulkDelete(amount, true);
-
-  const msg = await message.channel.send(
-    `${amount} mesaj silindi.`
-  );
-
-  setTimeout(() => {
-    msg.delete().catch(() => {});
-  }, 3000);
-
-});
-
-// BAN
-
-client.on("messageCreate", async message => {
-
-  if (message.author.bot) return;
-
-  if (!message.content.startsWith("!ban")) return;
-
-  if (
-    !message.member.permissions.has(
-      PermissionsBitField.Flags.BanMembers
-    )
-  ) {
-
-    return message.reply(
-      "Bu komutu kullanamazsın."
-    );
-
-  }
-
-  const member =
-    message.mentions.members.first();
-
-  if (!member) {
-
-    return message.reply(
-      "Bir kullanıcı etiketle."
-    );
-
-  }
-
-  const reason =
-    message.content.split(" ").slice(2).join(" ")
-    || "Sebep belirtilmedi.";
-
-  await member.ban({ reason });
-
-  const embed = new EmbedBuilder()
-    .setTitle("Kullanıcı Yasaklandı")
-    .setDescription(
-      `${member.user.tag} sunucudan yasaklandı.`
-    )
-    .addFields({
-      name: "Sebep",
-      value: reason
-    })
-    .setColor("Red");
-
-  message.channel.send({
-    embeds: [embed]
-  });
-
-});
-
-// KICK
-
-client.on("messageCreate", async message => {
-
-  if (message.author.bot) return;
-
-  if (!message.content.startsWith("!kick")) return;
-
-  if (
-    !message.member.permissions.has(
-      PermissionsBitField.Flags.KickMembers
-    )
-  ) {
-
-    return message.reply(
-      "Bu komutu kullanamazsın."
-    );
-
-  }
-
-  const member =
-    message.mentions.members.first();
-
-  if (!member) {
-
-    return message.reply(
-      "Bir kullanıcı etiketle."
-    );
-
-  }
-
-  const reason =
-    message.content.split(" ").slice(2).join(" ")
-    || "Sebep belirtilmedi.";
-
-  await member.kick(reason);
-
-  const embed = new EmbedBuilder()
-    .setTitle("Kullanıcı Atıldı")
-    .setDescription(
-      `${member.user.tag} sunucudan atıldı.`
-    )
-    .addFields({
-      name: "Sebep",
-      value: reason
-    })
-    .setColor("Orange");
-
-  message.channel.send({
-    embeds: [embed]
-  });
-
 });
 
 client.login(process.env.TOKEN);
-
-// EXPRESS SERVER
 
 const app = express();
 
@@ -216,7 +160,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log(
-    `Web server ${PORT} portunda çalışıyor.`
-  );
+  console.log(`Web server ${PORT} portunda çalışıyor.`);
 });
