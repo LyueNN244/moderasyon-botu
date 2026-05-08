@@ -10,7 +10,6 @@ import {
   ButtonStyle,
   Partials,
   ChannelType,
-  PermissionFlagsBits,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle
@@ -34,12 +33,24 @@ const client = new Client({
 const tempVoiceChannels = new Map();
 const controlMessages = new Map();
 
-function getChannel(id) {
-  return client.channels.cache.get(id);
+async function getChannel(id) {
+  if (!id) return null;
+
+  const cachedChannel = client.channels.cache.get(id);
+
+  if (cachedChannel) {
+    return cachedChannel;
+  }
+
+  try {
+    return await client.channels.fetch(id);
+  } catch {
+    return null;
+  }
 }
 
 async function sendLog(channelId, embed) {
-  const channel = getChannel(channelId);
+  const channel = await getChannel(channelId);
 
   if (!channel) return;
 
@@ -114,7 +125,12 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
       );
 
-      const controlChannel = getChannel(controlChannelId);
+      const controlChannel = await getChannel(controlChannelId);
+
+      if (!controlChannel) {
+        console.log("Oda kontrol kanalı bulunamadı:", controlChannelId);
+        return;
+      }
 
       const msg = await controlChannel.send({
         content: `${newState.member}`,
@@ -131,11 +147,11 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
       if (oldChannel && oldChannel.members.size === 0) {
 
-        const controlChannel = getChannel(process.env.VOICE_CONTROL_CHANNEL_ID);
+        const controlChannel = await getChannel(process.env.VOICE_CONTROL_CHANNEL_ID);
 
         const msgId = controlMessages.get(oldChannel.id);
 
-        if (msgId) {
+        if (msgId && controlChannel) {
 
           const msg = await controlChannel.messages.fetch(msgId).catch(() => null);
 
@@ -344,12 +360,23 @@ client.on("interactionCreate", async interaction => {
 
       if (action === "delete") {
 
+        const controlChannel = await getChannel(process.env.VOICE_CONTROL_CHANNEL_ID);
+        const msgId = controlMessages.get(channelId);
+
+        if (msgId && controlChannel) {
+          const msg = await controlChannel.messages.fetch(msgId).catch(() => null);
+          if (msg) await msg.delete().catch(() => {});
+        }
+
+        controlMessages.delete(channelId);
+        tempVoiceChannels.delete(channelId);
+
         await channel.delete().catch(() => {});
 
         return interaction.reply({
           content: "Oda silindi.",
           ephemeral: true
-        });
+        }).catch(() => {});
 
       }
 
