@@ -4,7 +4,10 @@ import express from "express";
 import {
   Client,
   GatewayIntentBits,
-  EmbedBuilder
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
 } from "discord.js";
 
 const client = new Client({
@@ -19,11 +22,61 @@ client.once("ready", () => {
 });
 
 client.on("interactionCreate", async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
   try {
+    if (interaction.isButton()) {
+      if (interaction.customId === "verify_button") {
+        const roleId = process.env.VERIFY_ROLE_ID;
+        const role = interaction.guild.roles.cache.get(roleId);
+
+        if (!role) {
+          return interaction.reply({
+            content: "Verify rolü bulunamadı. VERIFY_ROLE_ID kontrol et.",
+            ephemeral: true
+          });
+        }
+
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+
+        if (member.roles.cache.has(roleId)) {
+          return interaction.reply({
+            content: "Zaten doğrulanmışsın.",
+            ephemeral: true
+          });
+        }
+
+        await member.roles.add(role);
+
+        return interaction.reply({
+          content: "Başarıyla doğrulandın. Sunucuya hoş geldin!",
+          ephemeral: true
+        });
+      }
+    }
+
+    if (!interaction.isChatInputCommand()) return;
+
     if (interaction.commandName === "ping") {
       return interaction.reply("Pong!");
+    }
+
+    if (interaction.commandName === "verify-kur") {
+      const embed = new EmbedBuilder()
+        .setTitle("NTE Türkiye Doğrulama")
+        .setDescription("Sunucuya erişmek için aşağıdaki **Doğrula** butonuna bas.")
+        .setColor("Purple");
+
+      const button = new ButtonBuilder()
+        .setCustomId("verify_button")
+        .setLabel("Doğrula")
+        .setEmoji("✅")
+        .setStyle(ButtonStyle.Success);
+
+      const row = new ActionRowBuilder().addComponents(button);
+
+      return interaction.reply({
+        embeds: [embed],
+        components: [row]
+      });
     }
 
     if (interaction.commandName === "ban") {
@@ -38,7 +91,6 @@ client.on("interactionCreate", async interaction => {
       }
 
       await member.ban();
-
       return interaction.reply(`${user.tag} banlandı.`);
     }
 
@@ -54,7 +106,6 @@ client.on("interactionCreate", async interaction => {
       }
 
       await member.kick();
-
       return interaction.reply(`${user.tag} atıldı.`);
     }
 

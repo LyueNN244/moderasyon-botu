@@ -1,73 +1,101 @@
-import {
-  SlashCommandBuilder,
-  PermissionFlagsBits
-} from "discord.js";
+import { REST, Routes, SlashCommandBuilder } from "discord.js";
+import "dotenv/config";
 
-export const commands = [
+const commands = [
+
   new SlashCommandBuilder()
     .setName("ping")
-    .setDescription("Bot pingini gösterir."),
+    .setDescription("Botun pingini gösterir."),
 
   new SlashCommandBuilder()
     .setName("ban")
-    .setDescription("Kullanıcı banlar.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+    .setDescription("Bir kullanıcıyı banlar.")
     .addUserOption(option =>
-      option.setName("kullanici")
-        .setDescription("Banlanacak kişi")
+      option
+        .setName("kullanici")
+        .setDescription("Banlanacak kullanıcı")
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("kick")
-    .setDescription("Kullanıcı atar.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
+    .setDescription("Bir kullanıcıyı sunucudan atar.")
     .addUserOption(option =>
-      option.setName("kullanici")
-        .setDescription("Atılacak kişi")
+      option
+        .setName("kullanici")
+        .setDescription("Atılacak kullanıcı")
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("clear")
     .setDescription("Mesaj siler.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
     .addIntegerOption(option =>
-      option.setName("miktar")
-        .setDescription("Silinecek mesaj sayısı")
+      option
+        .setName("miktar")
+        .setDescription("Silinecek mesaj miktarı")
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("timeout")
     .setDescription("Kullanıcıya timeout verir.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .addUserOption(option =>
-      option.setName("kullanici")
-        .setDescription("Timeout verilecek kişi")
+      option
+        .setName("kullanici")
+        .setDescription("Timeout verilecek kullanıcı")
         .setRequired(true)
     )
     .addIntegerOption(option =>
-      option.setName("dakika")
-        .setDescription("Kaç dakika?")
+      option
+        .setName("dakika")
+        .setDescription("Dakika")
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("userinfo")
-    .setDescription("Kullanıcı bilgisi gösterir.")
+    .setDescription("Kullanıcı bilgilerini gösterir.")
     .addUserOption(option =>
-      option.setName("kullanici")
-        .setDescription("Kullanıcı seç")
+      option
+        .setName("kullanici")
+        .setDescription("Kullanıcı")
         .setRequired(false)
     ),
 
   new SlashCommandBuilder()
     .setName("serverinfo")
-    .setDescription("Sunucu bilgisi gösterir."),
+    .setDescription("Sunucu bilgilerini gösterir."),
 
   new SlashCommandBuilder()
-    .setName("ticket-kur")
-    .setDescription("Ticket paneli kurar.")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .setName("verify-kur")
+    .setDescription("Verify panelini kurar.")
+
 ].map(command => command.toJSON());
+
+const rest = new REST({ version: "10" })
+  .setToken(process.env.TOKEN);
+
+(async () => {
+
+  try {
+
+    console.log("Slash komutları yükleniyor...");
+
+    await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ),
+      { body: commands }
+    );
+
+    console.log("Slash komutları yüklendi.");
+
+  } catch (error) {
+
+    console.error(error);
+
+  }
+
+})();
