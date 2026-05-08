@@ -7,19 +7,137 @@ import {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  Partials
 } from "discord.js";
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ],
+  partials: [
+    Partials.Message,
+    Partials.Channel,
+    Partials.GuildMember
   ]
 });
+
+function getChannel(id) {
+  return client.channels.cache.get(id);
+}
+
+async function sendLog(channelId, embed) {
+  const channel = getChannel(channelId);
+  if (!channel) return;
+
+  await channel.send({
+    embeds: [embed]
+  }).catch(() => {});
+}
 
 client.once("ready", () => {
   console.log(`${client.user.tag} aktif!`);
 });
+
+// ÜYE GİRİŞ LOG
+
+client.on("guildMemberAdd", async member => {
+  const embed = new EmbedBuilder()
+    .setTitle("Üye Katıldı")
+    .setDescription(`${member.user} sunucuya katıldı.`)
+    .addFields(
+      { name: "Kullanıcı", value: member.user.tag },
+      { name: "ID", value: member.id },
+      {
+        name: "Hesap Oluşturulma",
+        value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:F>`
+      }
+    )
+    .setColor("Green")
+    .setTimestamp();
+
+  await sendLog(process.env.MEMBER_LOG_CHANNEL_ID, embed);
+});
+
+// ÜYE ÇIKIŞ LOG
+
+client.on("guildMemberRemove", async member => {
+  const embed = new EmbedBuilder()
+    .setTitle("Üye Ayrıldı")
+    .setDescription(`${member.user} sunucudan ayrıldı.`)
+    .addFields(
+      { name: "Kullanıcı", value: member.user.tag },
+      { name: "ID", value: member.id }
+    )
+    .setColor("Red")
+    .setTimestamp();
+
+  await sendLog(process.env.MEMBER_LOG_CHANNEL_ID, embed);
+});
+
+// MESAJ SİLME LOG
+
+client.on("messageDelete", async message => {
+  if (message.author?.bot) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle("Mesaj Silindi")
+    .addFields(
+      {
+        name: "Kullanıcı",
+        value: message.author ? `${message.author.tag}` : "Bilinmiyor"
+      },
+      {
+        name: "Kanal",
+        value: message.channel ? `${message.channel}` : "Bilinmiyor"
+      },
+      {
+        name: "Mesaj",
+        value: message.content || "Mesaj içeriği alınamadı."
+      }
+    )
+    .setColor("Orange")
+    .setTimestamp();
+
+  await sendLog(process.env.MESSAGE_LOG_CHANNEL_ID, embed);
+});
+
+// MESAJ DÜZENLEME LOG
+
+client.on("messageUpdate", async (oldMessage, newMessage) => {
+  if (oldMessage.author?.bot) return;
+  if (oldMessage.content === newMessage.content) return;
+
+  const embed = new EmbedBuilder()
+    .setTitle("Mesaj Düzenlendi")
+    .addFields(
+      {
+        name: "Kullanıcı",
+        value: oldMessage.author ? `${oldMessage.author.tag}` : "Bilinmiyor"
+      },
+      {
+        name: "Kanal",
+        value: oldMessage.channel ? `${oldMessage.channel}` : "Bilinmiyor"
+      },
+      {
+        name: "Eski Mesaj",
+        value: oldMessage.content || "Eski içerik alınamadı."
+      },
+      {
+        name: "Yeni Mesaj",
+        value: newMessage.content || "Yeni içerik alınamadı."
+      }
+    )
+    .setColor("Yellow")
+    .setTimestamp();
+
+  await sendLog(process.env.MESSAGE_LOG_CHANNEL_ID, embed);
+});
+
+// SLASH KOMUTLAR VE VERIFY
 
 client.on("interactionCreate", async interaction => {
   try {
@@ -45,6 +163,18 @@ client.on("interactionCreate", async interaction => {
         }
 
         await member.roles.add(role);
+
+        const embed = new EmbedBuilder()
+          .setTitle("Üye Doğrulandı")
+          .setDescription(`${interaction.user} doğrulandı.`)
+          .addFields(
+            { name: "Kullanıcı", value: interaction.user.tag },
+            { name: "Verilen Rol", value: `${role}` }
+          )
+          .setColor("Green")
+          .setTimestamp();
+
+        await sendLog(process.env.MEMBER_LOG_CHANNEL_ID, embed);
 
         return interaction.reply({
           content: "Başarıyla doğrulandın. Sunucuya hoş geldin!",
@@ -91,6 +221,20 @@ client.on("interactionCreate", async interaction => {
       }
 
       await member.ban();
+
+      const embed = new EmbedBuilder()
+        .setTitle("Kullanıcı Banlandı")
+        .setDescription(`${user} sunucudan banlandı.`)
+        .addFields(
+          { name: "Yetkili", value: `${interaction.user}` },
+          { name: "Kullanıcı", value: user.tag },
+          { name: "ID", value: user.id }
+        )
+        .setColor("Red")
+        .setTimestamp();
+
+      await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
+
       return interaction.reply(`${user.tag} banlandı.`);
     }
 
@@ -106,6 +250,20 @@ client.on("interactionCreate", async interaction => {
       }
 
       await member.kick();
+
+      const embed = new EmbedBuilder()
+        .setTitle("Kullanıcı Atıldı")
+        .setDescription(`${user} sunucudan atıldı.`)
+        .addFields(
+          { name: "Yetkili", value: `${interaction.user}` },
+          { name: "Kullanıcı", value: user.tag },
+          { name: "ID", value: user.id }
+        )
+        .setColor("Orange")
+        .setTimestamp();
+
+      await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
+
       return interaction.reply(`${user.tag} atıldı.`);
     }
 
@@ -120,6 +278,18 @@ client.on("interactionCreate", async interaction => {
       }
 
       await interaction.channel.bulkDelete(amount, true);
+
+      const embed = new EmbedBuilder()
+        .setTitle("Mesaj Temizlendi")
+        .addFields(
+          { name: "Yetkili", value: `${interaction.user}` },
+          { name: "Kanal", value: `${interaction.channel}` },
+          { name: "Miktar", value: `${amount}` }
+        )
+        .setColor("Blue")
+        .setTimestamp();
+
+      await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
 
       return interaction.reply({
         content: `${amount} mesaj silindi.`,
@@ -140,6 +310,19 @@ client.on("interactionCreate", async interaction => {
       }
 
       await member.timeout(minutes * 60 * 1000);
+
+      const embed = new EmbedBuilder()
+        .setTitle("Timeout Verildi")
+        .setDescription(`${user} timeout aldı.`)
+        .addFields(
+          { name: "Yetkili", value: `${interaction.user}` },
+          { name: "Kullanıcı", value: user.tag },
+          { name: "Süre", value: `${minutes} dakika` }
+        )
+        .setColor("Purple")
+        .setTimestamp();
+
+      await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
 
       return interaction.reply(`${user.tag} ${minutes} dakika timeout aldı.`);
     }
