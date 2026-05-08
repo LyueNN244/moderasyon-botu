@@ -66,15 +66,12 @@ client.once("ready", () => {
 // ODA OLUŞTURMA SİSTEMİ
 
 client.on("voiceStateUpdate", async (oldState, newState) => {
-
   try {
-
     const createChannelId = process.env.CREATE_VOICE_CHANNEL_ID;
     const tempCategoryId = process.env.TEMP_VOICE_CATEGORY_ID;
     const controlChannelId = process.env.VOICE_CONTROL_CHANNEL_ID;
 
     if (newState.channelId === createChannelId) {
-
       const voiceChannel = await newState.guild.channels.create({
         name: `🔊 ${newState.member.user.username}`,
         type: ChannelType.GuildVoice,
@@ -98,7 +95,6 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         .setColor("Purple");
 
       const row = new ActionRowBuilder().addComponents(
-
         new ButtonBuilder()
           .setCustomId(`lock_${voiceChannel.id}`)
           .setLabel("Kilitle")
@@ -122,7 +118,6 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
           .setLabel("Sil")
           .setEmoji("🗑️")
           .setStyle(ButtonStyle.Secondary)
-
       );
 
       const controlChannel = await getChannel(controlChannelId);
@@ -142,23 +137,19 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
     }
 
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
-
       const oldChannel = oldState.guild.channels.cache.get(oldState.channelId);
 
       if (oldChannel && oldChannel.members.size === 0) {
-
         const controlChannel = await getChannel(process.env.VOICE_CONTROL_CHANNEL_ID);
 
         const msgId = controlMessages.get(oldChannel.id);
 
         if (msgId && controlChannel) {
-
           const msg = await controlChannel.messages.fetch(msgId).catch(() => null);
 
           if (msg) {
             await msg.delete().catch(() => {});
           }
-
         }
 
         controlMessages.delete(oldChannel.id);
@@ -167,18 +158,23 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
         await oldChannel.delete().catch(() => {});
       }
     }
-
   } catch (error) {
-
     console.error("Oda sistemi hatası:", error);
-
   }
-
 });
 
-// ÜYE GİRİŞ LOG
+// ÜYE GİRİŞ LOG + DOĞRULANMADI ROLÜ
 
 client.on("guildMemberAdd", async member => {
+  const unverifiedRoleId = process.env.UNVERIFIED_ROLE_ID;
+
+  if (unverifiedRoleId) {
+    const role = member.guild.roles.cache.get(unverifiedRoleId);
+
+    if (role) {
+      await member.roles.add(role).catch(() => {});
+    }
+  }
 
   const embed = new EmbedBuilder()
     .setTitle("Üye Katıldı")
@@ -187,13 +183,11 @@ client.on("guildMemberAdd", async member => {
     .setTimestamp();
 
   await sendLog(process.env.MEMBER_LOG_CHANNEL_ID, embed);
-
 });
 
 // ÜYE ÇIKIŞ LOG
 
 client.on("guildMemberRemove", async member => {
-
   const embed = new EmbedBuilder()
     .setTitle("Üye Ayrıldı")
     .setDescription(`${member.user} sunucudan ayrıldı.`)
@@ -201,13 +195,11 @@ client.on("guildMemberRemove", async member => {
     .setTimestamp();
 
   await sendLog(process.env.MEMBER_LOG_CHANNEL_ID, embed);
-
 });
 
 // MESAJ SİLME LOG
 
 client.on("messageDelete", async message => {
-
   if (message.author?.bot) return;
 
   const embed = new EmbedBuilder()
@@ -226,13 +218,11 @@ client.on("messageDelete", async message => {
     .setTimestamp();
 
   await sendLog(process.env.MESSAGE_LOG_CHANNEL_ID, embed);
-
 });
 
 // MESAJ DÜZENLEME LOG
 
 client.on("messageUpdate", async (oldMessage, newMessage) => {
-
   if (oldMessage.author?.bot) return;
   if (oldMessage.content === newMessage.content) return;
 
@@ -256,45 +246,42 @@ client.on("messageUpdate", async (oldMessage, newMessage) => {
     .setTimestamp();
 
   await sendLog(process.env.MESSAGE_LOG_CHANNEL_ID, embed);
-
 });
 
 // INTERACTION SİSTEMİ
 
 client.on("interactionCreate", async interaction => {
-
   try {
-
     // VERIFY BUTONU
 
     if (interaction.isButton()) {
-
       if (interaction.customId === "verify_button") {
-
         const roleId = process.env.VERIFY_ROLE_ID;
+        const unverifiedRoleId = process.env.UNVERIFIED_ROLE_ID;
+
         const role = interaction.guild.roles.cache.get(roleId);
 
         if (!role) {
-
           return interaction.reply({
             content: "Verify rolü bulunamadı.",
             ephemeral: true
           });
-
         }
 
         const member = await interaction.guild.members.fetch(interaction.user.id);
 
         if (member.roles.cache.has(roleId)) {
-
           return interaction.reply({
             content: "Zaten doğrulanmışsın.",
             ephemeral: true
           });
-
         }
 
         await member.roles.add(role);
+
+        if (unverifiedRoleId && member.roles.cache.has(unverifiedRoleId)) {
+          await member.roles.remove(unverifiedRoleId).catch(() => {});
+        }
 
         const embed = new EmbedBuilder()
           .setTitle("Üye Doğrulandı")
@@ -308,7 +295,6 @@ client.on("interactionCreate", async interaction => {
           content: "Başarıyla doğrulandın.",
           ephemeral: true
         });
-
       }
 
       // ODA BUTONLARI
@@ -320,12 +306,10 @@ client.on("interactionCreate", async interaction => {
       if (!data) return;
 
       if (interaction.user.id !== data.ownerId) {
-
         return interaction.reply({
           content: "Bu oda sana ait değil.",
           ephemeral: true
         });
-
       }
 
       const channel = interaction.guild.channels.cache.get(channelId);
@@ -333,7 +317,6 @@ client.on("interactionCreate", async interaction => {
       if (!channel) return;
 
       if (action === "lock") {
-
         await channel.permissionOverwrites.edit(interaction.guild.id, {
           Connect: false
         });
@@ -342,11 +325,9 @@ client.on("interactionCreate", async interaction => {
           content: "Oda kilitlendi.",
           ephemeral: true
         });
-
       }
 
       if (action === "unlock") {
-
         await channel.permissionOverwrites.edit(interaction.guild.id, {
           Connect: true
         });
@@ -355,17 +336,18 @@ client.on("interactionCreate", async interaction => {
           content: "Oda açıldı.",
           ephemeral: true
         });
-
       }
 
       if (action === "delete") {
-
         const controlChannel = await getChannel(process.env.VOICE_CONTROL_CHANNEL_ID);
         const msgId = controlMessages.get(channelId);
 
         if (msgId && controlChannel) {
           const msg = await controlChannel.messages.fetch(msgId).catch(() => null);
-          if (msg) await msg.delete().catch(() => {});
+
+          if (msg) {
+            await msg.delete().catch(() => {});
+          }
         }
 
         controlMessages.delete(channelId);
@@ -377,11 +359,9 @@ client.on("interactionCreate", async interaction => {
           content: "Oda silindi.",
           ephemeral: true
         }).catch(() => {});
-
       }
 
       if (action === "limit") {
-
         const modal = new ModalBuilder()
           .setCustomId(`limitmodal_${channelId}`)
           .setTitle("Oda Limiti");
@@ -397,32 +377,33 @@ client.on("interactionCreate", async interaction => {
         modal.addComponents(row);
 
         return interaction.showModal(modal);
-
       }
-
     }
 
     // LIMIT MODAL
 
     if (interaction.isModalSubmit()) {
-
       const [modalType, channelId] = interaction.customId.split("_");
 
       if (modalType === "limitmodal") {
-
         const limit = Number(
           interaction.fields.getTextInputValue("limitinput")
         );
 
+        if (Number.isNaN(limit) || limit < 0 || limit > 99) {
+          return interaction.reply({
+            content: "Lütfen 0 ile 99 arasında geçerli bir sayı gir.",
+            ephemeral: true
+          });
+        }
+
         const channel = interaction.guild.channels.cache.get(channelId);
 
         if (!channel) {
-
           return interaction.reply({
             content: "Kanal bulunamadı.",
             ephemeral: true
           });
-
         }
 
         await channel.setUserLimit(limit);
@@ -431,9 +412,7 @@ client.on("interactionCreate", async interaction => {
           content: `Oda limiti ${limit} olarak ayarlandı.`,
           ephemeral: true
         });
-
       }
-
     }
 
     if (!interaction.isChatInputCommand()) return;
@@ -447,7 +426,6 @@ client.on("interactionCreate", async interaction => {
     // VERIFY PANEL
 
     if (interaction.commandName === "verify-kur") {
-
       const embed = new EmbedBuilder()
         .setTitle("NTE Türkiye Doğrulama")
         .setDescription("Doğrulamak için aşağıdaki butona bas.")
@@ -465,13 +443,11 @@ client.on("interactionCreate", async interaction => {
         embeds: [embed],
         components: [row]
       });
-
     }
 
     // BAN
 
     if (interaction.commandName === "ban") {
-
       const user = interaction.options.getUser("kullanici");
       const member = await interaction.guild.members.fetch(user.id);
 
@@ -485,13 +461,11 @@ client.on("interactionCreate", async interaction => {
       await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
 
       return interaction.reply(`${user.tag} banlandı.`);
-
     }
 
     // KICK
 
     if (interaction.commandName === "kick") {
-
       const user = interaction.options.getUser("kullanici");
       const member = await interaction.guild.members.fetch(user.id);
 
@@ -505,14 +479,19 @@ client.on("interactionCreate", async interaction => {
       await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
 
       return interaction.reply(`${user.tag} atıldı.`);
-
     }
 
     // CLEAR
 
     if (interaction.commandName === "clear") {
-
       const amount = interaction.options.getInteger("miktar");
+
+      if (amount < 1 || amount > 100) {
+        return interaction.reply({
+          content: "1 ile 100 arasında sayı gir.",
+          ephemeral: true
+        });
+      }
 
       await interaction.channel.bulkDelete(amount, true);
 
@@ -527,13 +506,11 @@ client.on("interactionCreate", async interaction => {
         content: `${amount} mesaj silindi.`,
         ephemeral: true
       });
-
     }
 
     // TIMEOUT
 
     if (interaction.commandName === "timeout") {
-
       const user = interaction.options.getUser("kullanici");
       const minutes = interaction.options.getInteger("dakika");
 
@@ -549,13 +526,11 @@ client.on("interactionCreate", async interaction => {
       await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
 
       return interaction.reply(`${user.tag} timeout aldı.`);
-
     }
 
     // USERINFO
 
     if (interaction.commandName === "userinfo") {
-
       const user = interaction.options.getUser("kullanici") || interaction.user;
 
       const embed = new EmbedBuilder()
@@ -572,13 +547,11 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({
         embeds: [embed]
       });
-
     }
 
     // SERVERINFO
 
     if (interaction.commandName === "serverinfo") {
-
       const guild = interaction.guild;
 
       const embed = new EmbedBuilder()
@@ -594,26 +567,20 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({
         embeds: [embed]
       });
-
     }
 
   } catch (error) {
-
     console.error(error);
 
     if (interaction.replied || interaction.deferred) {
-
       return interaction.editReply("Bir hata oluştu.");
-
     }
 
     return interaction.reply({
       content: "Bir hata oluştu.",
       ephemeral: true
     });
-
   }
-
 });
 
 client.login(process.env.TOKEN);
