@@ -8,7 +8,9 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  Partials
+  Partials,
+  ChannelType,
+  PermissionFlagsBits
 } from "discord.js";
 
 const client = new Client({
@@ -16,7 +18,8 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates
   ],
   partials: [
     Partials.Message,
@@ -24,6 +27,8 @@ const client = new Client({
     Partials.GuildMember
   ]
 });
+
+const tempVoiceChannels = new Map();
 
 function getChannel(id) {
   return client.channels.cache.get(id);
@@ -33,13 +38,61 @@ async function sendLog(channelId, embed) {
   const channel = getChannel(channelId);
   if (!channel) return;
 
-  await channel.send({
-    embeds: [embed]
-  }).catch(() => {});
+  await channel.send({ embeds: [embed] }).catch(() => {});
 }
 
 client.once("ready", () => {
   console.log(`${client.user.tag} aktif!`);
+});
+
+// OTOMATİK ODA OLUŞTURMA
+
+client.on("voiceStateUpdate", async (oldState, newState) => {
+  try {
+    const createChannelId = process.env.CREATE_VOICE_CHANNEL_ID;
+    const tempCategoryId = process.env.TEMP_VOICE_CATEGORY_ID;
+
+    if (newState.channelId === createChannelId) {
+      const channel = await newState.guild.channels.create({
+        name: `🔊 ${newState.member.user.username}`,
+        type: ChannelType.GuildVoice,
+        parent: tempCategoryId,
+        permissionOverwrites: [
+          {
+            id: newState.guild.id,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.Connect
+            ]
+          },
+          {
+            id: newState.member.id,
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.Connect,
+              PermissionFlagsBits.ManageChannels,
+              PermissionFlagsBits.MoveMembers
+            ]
+          }
+        ]
+      });
+
+      tempVoiceChannels.set(channel.id, newState.member.id);
+
+      await newState.member.voice.setChannel(channel);
+    }
+
+    if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
+      const oldChannel = oldState.guild.channels.cache.get(oldState.channelId);
+
+      if (oldChannel && oldChannel.members.size === 0) {
+        tempVoiceChannels.delete(oldChannel.id);
+        await oldChannel.delete().catch(() => {});
+      }
+    }
+  } catch (error) {
+    console.error("Oda oluşturma hatası:", error);
+  }
 });
 
 // ÜYE GİRİŞ LOG
