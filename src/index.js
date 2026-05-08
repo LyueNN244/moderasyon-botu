@@ -43,11 +43,19 @@ async function sendLog(channelId, embed) {
 
 client.once("ready", () => {
   console.log(`${client.user.tag} aktif!`);
+  console.log("Oda oluşturma hedef kanal ID:", process.env.CREATE_VOICE_CHANNEL_ID);
+  console.log("Oda oluşturma kategori ID:", process.env.TEMP_VOICE_CATEGORY_ID);
 });
 
 // OTOMATİK ODA OLUŞTURMA
 
 client.on("voiceStateUpdate", async (oldState, newState) => {
+  console.log("Ses olayı algılandı:", {
+    eskiKanal: oldState.channelId,
+    yeniKanal: newState.channelId,
+    hedefKanal: process.env.CREATE_VOICE_CHANNEL_ID
+  });
+
   try {
     const createChannelId = process.env.CREATE_VOICE_CHANNEL_ID;
     const tempCategoryId = process.env.TEMP_VOICE_CATEGORY_ID;
@@ -80,6 +88,8 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       tempVoiceChannels.set(channel.id, newState.member.id);
 
       await newState.member.voice.setChannel(channel);
+
+      console.log("Geçici oda oluşturuldu:", channel.name);
     }
 
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
@@ -88,6 +98,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       if (oldChannel && oldChannel.members.size === 0) {
         tempVoiceChannels.delete(oldChannel.id);
         await oldChannel.delete().catch(() => {});
+        console.log("Boş geçici oda silindi:", oldChannel.name);
       }
     }
   } catch (error) {
