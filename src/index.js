@@ -62,7 +62,7 @@ async function sendLog(channelId, embed) {
 client.once("ready", () => {
   client.user.setPresence({
     activities: [{
-      name: "🛡️ Protecting NTE Türkiye",
+      name: "🛡️ Advanced server protection",
       type: 0
     }],
     status: "online"
