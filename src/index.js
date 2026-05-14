@@ -60,6 +60,14 @@ async function sendLog(channelId, embed) {
 }
 
 client.once("ready", () => {
+  client.user.setPresence({
+    activities: [{
+      name: "🛡️ Protecting NTE Türkiye",
+      type: 0
+    }],
+    status: "online"
+  });
+
   console.log(`${client.user.tag} aktif!`);
 });
 
