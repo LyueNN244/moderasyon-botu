@@ -1,7 +1,9 @@
 import { REST, Routes, SlashCommandBuilder } from "discord.js";
 import "dotenv/config";
 
-const commands = [
+import { ChannelType } from "discord.js";
+
+export const commands = [
 
   new SlashCommandBuilder()
     .setName("ping")
@@ -69,33 +71,20 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("verify-kur")
-    .setDescription("Verify panelini kurar.")
+    .setDescription("Verify panelini kurar."),
+
+  new SlashCommandBuilder()
+    .setName("kurulum")
+    .setDescription("Sunucu ayarlarını yapılandırır (Sadece Yöneticiler).")
+    .setDefaultMemberPermissions(8) // Administrator
+    .addChannelOption(option => option.setName("create_voice_channel").setDescription("Ses kanalı oluşturma kanalı").addChannelTypes(ChannelType.GuildVoice).setRequired(false))
+    .addChannelOption(option => option.setName("temp_voice_category").setDescription("Geçici ses kanallarının açılacağı kategori").addChannelTypes(ChannelType.GuildCategory).setRequired(false))
+    .addChannelOption(option => option.setName("voice_control_channel").setDescription("Oda kontrol paneli kanalı").addChannelTypes(ChannelType.GuildText).setRequired(false))
+    .addRoleOption(option => option.setName("unverified_role").setDescription("Doğrulanmamış (Kayıtsız) rolü").setRequired(false))
+    .addRoleOption(option => option.setName("verify_role").setDescription("Doğrulanmış (Kayıtlı) rolü").setRequired(false))
+    .addChannelOption(option => option.setName("member_log_channel").setDescription("Üye giriş/çıkış log kanalı").addChannelTypes(ChannelType.GuildText).setRequired(false))
+    .addChannelOption(option => option.setName("message_log_channel").setDescription("Mesaj log kanalı").addChannelTypes(ChannelType.GuildText).setRequired(false))
+    .addChannelOption(option => option.setName("mod_log_channel").setDescription("Moderasyon (ban, kick vb) log kanalı").addChannelTypes(ChannelType.GuildText).setRequired(false))
 
 ].map(command => command.toJSON());
-
-const rest = new REST({ version: "10" })
-  .setToken(process.env.TOKEN);
-
-(async () => {
-
-  try {
-
-    console.log("Slash komutları yükleniyor...");
-
-    await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.CLIENT_ID,
-        process.env.GUILD_ID
-      ),
-      { body: commands }
-    );
-
-    console.log("Slash komutları yüklendi.");
-
-  } catch (error) {
-
-    console.error(error);
-
-  }
-
-})();
+

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import mongoose from "mongoose";
 
 import {
   Client,
@@ -14,6 +15,13 @@ import {
   TextInputBuilder,
   TextInputStyle
 } from "discord.js";
+
+import { GuildConfig } from "./models/GuildConfig.js";
+
+// MongoDB Bağlantısı
+mongoose.connect(process.env.MONGODB_URI || "mongodb://localhost:27017/moderasyon-bot")
+  .then(() => console.log("MongoDB bağlantısı başarılı!"))
+  .catch(err => console.error("MongoDB bağlantı hatası:", err));
 
 const client = new Client({
   intents: [
@@ -50,6 +58,7 @@ async function getChannel(id) {
 }
 
 async function sendLog(channelId, embed) {
+  if (!channelId) return;
   const channel = await getChannel(channelId);
 
   if (!channel) return;
@@ -75,15 +84,21 @@ client.once("ready", () => {
 
 client.on("voiceStateUpdate", async (oldState, newState) => {
   try {
-    const createChannelId = process.env.CREATE_VOICE_CHANNEL_ID;
-    const tempCategoryId = process.env.TEMP_VOICE_CATEGORY_ID;
-    const controlChannelId = process.env.VOICE_CONTROL_CHANNEL_ID;
+    const guildId = newState.guild?.id || oldState.guild?.id;
+    if (!guildId) return;
 
-    if (newState.channelId === createChannelId) {
+    const config = await GuildConfig.findOne({ guildId });
+    if (!config) return;
+
+    const createChannelId = config.createVoiceChannelId;
+    const tempCategoryId = config.tempVoiceCategoryId;
+    const controlChannelId = config.voiceControlChannelId;
+
+    if (createChannelId && newState.channelId === createChannelId) {
       const voiceChannel = await newState.guild.channels.create({
         name: `🔊 ${newState.member.user.username}`,
         type: ChannelType.GuildVoice,
-        parent: tempCategoryId
+        parent: tempCategoryId || null
       });
 
       tempVoiceChannels.set(voiceChannel.id, {
@@ -128,35 +143,34 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
           .setStyle(ButtonStyle.Secondary)
       );
 
-      const controlChannel = await getChannel(controlChannelId);
+      if (controlChannelId) {
+        const controlChannel = await getChannel(controlChannelId);
 
-      if (!controlChannel) {
-        console.log("Oda kontrol kanalı bulunamadı:", controlChannelId);
-        return;
+        if (controlChannel) {
+          const msg = await controlChannel.send({
+            content: `${newState.member}`,
+            embeds: [controlEmbed],
+            components: [row]
+          });
+          controlMessages.set(voiceChannel.id, msg.id);
+        }
       }
-
-      const msg = await controlChannel.send({
-        content: `${newState.member}`,
-        embeds: [controlEmbed],
-        components: [row]
-      });
-
-      controlMessages.set(voiceChannel.id, msg.id);
     }
 
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
       const oldChannel = oldState.guild.channels.cache.get(oldState.channelId);
 
       if (oldChannel && oldChannel.members.size === 0) {
-        const controlChannel = await getChannel(process.env.VOICE_CONTROL_CHANNEL_ID);
+        if (controlChannelId) {
+          const controlChannel = await getChannel(controlChannelId);
+          const msgId = controlMessages.get(oldChannel.id);
 
-        const msgId = controlMessages.get(oldChannel.id);
+          if (msgId && controlChannel) {
+            const msg = await controlChannel.messages.fetch(msgId).catch(() => null);
 
-        if (msgId && controlChannel) {
-          const msg = await controlChannel.messages.fetch(msgId).catch(() => null);
-
-          if (msg) {
-            await msg.delete().catch(() => {});
+            if (msg) {
+              await msg.delete().catch(() => {});
+            }
           }
         }
 
@@ -174,7 +188,10 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 // ÜYE GİRİŞ LOG + DOĞRULANMADI ROLÜ
 
 client.on("guildMemberAdd", async member => {
-  const unverifiedRoleId = process.env.UNVERIFIED_ROLE_ID;
+  const config = await GuildConfig.findOne({ guildId: member.guild.id });
+  if (!config) return;
+
+  const unverifiedRoleId = config.unverifiedRoleId;
 
   if (unverifiedRoleId) {
     const role = member.guild.roles.cache.get(unverifiedRoleId);
@@ -184,31 +201,39 @@ client.on("guildMemberAdd", async member => {
     }
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle("Üye Katıldı")
-    .setDescription(`${member.user} sunucuya katıldı.`)
-    .setColor("Green")
-    .setTimestamp();
+  if (config.memberLogChannelId) {
+    const embed = new EmbedBuilder()
+      .setTitle("Üye Katıldı")
+      .setDescription(`${member.user} sunucuya katıldı.`)
+      .setColor("Green")
+      .setTimestamp();
 
-  await sendLog(process.env.MEMBER_LOG_CHANNEL_ID, embed);
+    await sendLog(config.memberLogChannelId, embed);
+  }
 });
 
 // ÜYE ÇIKIŞ LOG
 
 client.on("guildMemberRemove", async member => {
+  const config = await GuildConfig.findOne({ guildId: member.guild.id });
+  if (!config || !config.memberLogChannelId) return;
+
   const embed = new EmbedBuilder()
     .setTitle("Üye Ayrıldı")
     .setDescription(`${member.user} sunucudan ayrıldı.`)
     .setColor("Red")
     .setTimestamp();
 
-  await sendLog(process.env.MEMBER_LOG_CHANNEL_ID, embed);
+  await sendLog(config.memberLogChannelId, embed);
 });
 
 // MESAJ SİLME LOG
 
 client.on("messageDelete", async message => {
-  if (message.author?.bot) return;
+  if (message.author?.bot || !message.guild) return;
+
+  const config = await GuildConfig.findOne({ guildId: message.guild.id });
+  if (!config || !config.messageLogChannelId) return;
 
   const embed = new EmbedBuilder()
     .setTitle("Mesaj Silindi")
@@ -225,14 +250,17 @@ client.on("messageDelete", async message => {
     .setColor("Orange")
     .setTimestamp();
 
-  await sendLog(process.env.MESSAGE_LOG_CHANNEL_ID, embed);
+  await sendLog(config.messageLogChannelId, embed);
 });
 
 // MESAJ DÜZENLEME LOG
 
 client.on("messageUpdate", async (oldMessage, newMessage) => {
-  if (oldMessage.author?.bot) return;
+  if (oldMessage.author?.bot || !oldMessage.guild) return;
   if (oldMessage.content === newMessage.content) return;
+
+  const config = await GuildConfig.findOne({ guildId: oldMessage.guild.id });
+  if (!config || !config.messageLogChannelId) return;
 
   const embed = new EmbedBuilder()
     .setTitle("Mesaj Düzenlendi")
@@ -253,19 +281,29 @@ client.on("messageUpdate", async (oldMessage, newMessage) => {
     .setColor("Yellow")
     .setTimestamp();
 
-  await sendLog(process.env.MESSAGE_LOG_CHANNEL_ID, embed);
+  await sendLog(config.messageLogChannelId, embed);
 });
 
 // INTERACTION SİSTEMİ
 
 client.on("interactionCreate", async interaction => {
+  if (!interaction.guild) return;
+
   try {
     // VERIFY BUTONU
 
     if (interaction.isButton()) {
       if (interaction.customId === "verify_button") {
-        const roleId = process.env.VERIFY_ROLE_ID;
-        const unverifiedRoleId = process.env.UNVERIFIED_ROLE_ID;
+        const config = await GuildConfig.findOne({ guildId: interaction.guild.id });
+        if (!config || !config.verifyRoleId) {
+          return interaction.reply({
+            content: "Sunucu doğrulama ayarları yapılmamış.",
+            ephemeral: true
+          });
+        }
+
+        const roleId = config.verifyRoleId;
+        const unverifiedRoleId = config.unverifiedRoleId;
 
         const role = interaction.guild.roles.cache.get(roleId);
 
@@ -291,13 +329,15 @@ client.on("interactionCreate", async interaction => {
           await member.roles.remove(unverifiedRoleId).catch(() => {});
         }
 
-        const embed = new EmbedBuilder()
-          .setTitle("Üye Doğrulandı")
-          .setDescription(`${interaction.user} doğrulandı.`)
-          .setColor("Green")
-          .setTimestamp();
+        if (config.memberLogChannelId) {
+          const embed = new EmbedBuilder()
+            .setTitle("Üye Doğrulandı")
+            .setDescription(`${interaction.user} doğrulandı.`)
+            .setColor("Green")
+            .setTimestamp();
 
-        await sendLog(process.env.MEMBER_LOG_CHANNEL_ID, embed);
+          await sendLog(config.memberLogChannelId, embed);
+        }
 
         return interaction.reply({
           content: "Başarıyla doğrulandın.",
@@ -307,84 +347,93 @@ client.on("interactionCreate", async interaction => {
 
       // ODA BUTONLARI
 
-      const [action, channelId] = interaction.customId.split("_");
+      if (interaction.customId.startsWith("lock_") || 
+          interaction.customId.startsWith("unlock_") || 
+          interaction.customId.startsWith("limit_") || 
+          interaction.customId.startsWith("delete_")) {
+        
+        const [action, channelId] = interaction.customId.split("_");
 
-      const data = tempVoiceChannels.get(channelId);
+        const data = tempVoiceChannels.get(channelId);
 
-      if (!data) return;
+        if (!data) return;
 
-      if (interaction.user.id !== data.ownerId) {
-        return interaction.reply({
-          content: "Bu oda sana ait değil.",
-          ephemeral: true
-        });
-      }
-
-      const channel = interaction.guild.channels.cache.get(channelId);
-
-      if (!channel) return;
-
-      if (action === "lock") {
-        await channel.permissionOverwrites.edit(interaction.guild.id, {
-          Connect: false
-        });
-
-        return interaction.reply({
-          content: "Oda kilitlendi.",
-          ephemeral: true
-        });
-      }
-
-      if (action === "unlock") {
-        await channel.permissionOverwrites.edit(interaction.guild.id, {
-          Connect: true
-        });
-
-        return interaction.reply({
-          content: "Oda açıldı.",
-          ephemeral: true
-        });
-      }
-
-      if (action === "delete") {
-        const controlChannel = await getChannel(process.env.VOICE_CONTROL_CHANNEL_ID);
-        const msgId = controlMessages.get(channelId);
-
-        if (msgId && controlChannel) {
-          const msg = await controlChannel.messages.fetch(msgId).catch(() => null);
-
-          if (msg) {
-            await msg.delete().catch(() => {});
-          }
+        if (interaction.user.id !== data.ownerId) {
+          return interaction.reply({
+            content: "Bu oda sana ait değil.",
+            ephemeral: true
+          });
         }
 
-        controlMessages.delete(channelId);
-        tempVoiceChannels.delete(channelId);
+        const channel = interaction.guild.channels.cache.get(channelId);
 
-        await channel.delete().catch(() => {});
+        if (!channel) return;
 
-        return interaction.reply({
-          content: "Oda silindi.",
-          ephemeral: true
-        }).catch(() => {});
-      }
+        if (action === "lock") {
+          await channel.permissionOverwrites.edit(interaction.guild.id, {
+            Connect: false
+          });
 
-      if (action === "limit") {
-        const modal = new ModalBuilder()
-          .setCustomId(`limitmodal_${channelId}`)
-          .setTitle("Oda Limiti");
+          return interaction.reply({
+            content: "Oda kilitlendi.",
+            ephemeral: true
+          });
+        }
 
-        const input = new TextInputBuilder()
-          .setCustomId("limitinput")
-          .setLabel("Kişi limiti")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
+        if (action === "unlock") {
+          await channel.permissionOverwrites.edit(interaction.guild.id, {
+            Connect: true
+          });
 
-        const row = new ActionRowBuilder().addComponents(input);
+          return interaction.reply({
+            content: "Oda açıldı.",
+            ephemeral: true
+          });
+        }
 
-        modal.addComponents(row);
+        if (action === "delete") {
+          const config = await GuildConfig.findOne({ guildId: interaction.guild.id });
+          if (config && config.voiceControlChannelId) {
+            const controlChannel = await getChannel(config.voiceControlChannelId);
+            const msgId = controlMessages.get(channelId);
 
-        return interaction.showModal(modal);
+            if (msgId && controlChannel) {
+              const msg = await controlChannel.messages.fetch(msgId).catch(() => null);
+
+              if (msg) {
+                await msg.delete().catch(() => {});
+              }
+            }
+          }
+
+          controlMessages.delete(channelId);
+          tempVoiceChannels.delete(channelId);
+
+          await channel.delete().catch(() => {});
+
+          return interaction.reply({
+            content: "Oda silindi.",
+            ephemeral: true
+          }).catch(() => {});
+        }
+
+        if (action === "limit") {
+          const modal = new ModalBuilder()
+            .setCustomId(`limitmodal_${channelId}`)
+            .setTitle("Oda Limiti");
+
+          const input = new TextInputBuilder()
+            .setCustomId("limitinput")
+            .setLabel("Kişi limiti")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+
+          const row = new ActionRowBuilder().addComponents(input);
+
+          modal.addComponents(row);
+
+          return interaction.showModal(modal);
+        }
       }
     }
 
@@ -425,6 +474,54 @@ client.on("interactionCreate", async interaction => {
 
     if (!interaction.isChatInputCommand()) return;
 
+    // KURULUM
+
+    if (interaction.commandName === "kurulum") {
+      const updateData = {};
+      
+      const createVoice = interaction.options.getChannel("create_voice_channel");
+      if (createVoice) updateData.createVoiceChannelId = createVoice.id;
+
+      const tempCategory = interaction.options.getChannel("temp_voice_category");
+      if (tempCategory) updateData.tempVoiceCategoryId = tempCategory.id;
+
+      const controlChannel = interaction.options.getChannel("voice_control_channel");
+      if (controlChannel) updateData.voiceControlChannelId = controlChannel.id;
+
+      const unverifiedRole = interaction.options.getRole("unverified_role");
+      if (unverifiedRole) updateData.unverifiedRoleId = unverifiedRole.id;
+
+      const verifyRole = interaction.options.getRole("verify_role");
+      if (verifyRole) updateData.verifyRoleId = verifyRole.id;
+
+      const memberLog = interaction.options.getChannel("member_log_channel");
+      if (memberLog) updateData.memberLogChannelId = memberLog.id;
+
+      const messageLog = interaction.options.getChannel("message_log_channel");
+      if (messageLog) updateData.messageLogChannelId = messageLog.id;
+
+      const modLog = interaction.options.getChannel("mod_log_channel");
+      if (modLog) updateData.modLogChannelId = modLog.id;
+
+      if (Object.keys(updateData).length === 0) {
+        return interaction.reply({
+          content: "Hiçbir ayar seçmediniz.",
+          ephemeral: true
+        });
+      }
+
+      await GuildConfig.findOneAndUpdate(
+        { guildId: interaction.guild.id },
+        updateData,
+        { upsert: true, new: true }
+      );
+
+      return interaction.reply({
+        content: "✅ Sunucu ayarları başarıyla kaydedildi.",
+        ephemeral: true
+      });
+    }
+
     // PING
 
     if (interaction.commandName === "ping") {
@@ -453,6 +550,10 @@ client.on("interactionCreate", async interaction => {
       });
     }
 
+    // MODERASYON İŞLEMLERİ İÇİN CONFIG
+
+    const config = await GuildConfig.findOne({ guildId: interaction.guild.id });
+
     // BAN
 
     if (interaction.commandName === "ban") {
@@ -466,7 +567,9 @@ client.on("interactionCreate", async interaction => {
         .setDescription(`${user.tag} banlandı.`)
         .setColor("Red");
 
-      await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
+      if (config?.modLogChannelId) {
+        await sendLog(config.modLogChannelId, embed);
+      }
 
       return interaction.reply(`${user.tag} banlandı.`);
     }
@@ -484,7 +587,9 @@ client.on("interactionCreate", async interaction => {
         .setDescription(`${user.tag} atıldı.`)
         .setColor("Orange");
 
-      await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
+      if (config?.modLogChannelId) {
+        await sendLog(config.modLogChannelId, embed);
+      }
 
       return interaction.reply(`${user.tag} atıldı.`);
     }
@@ -508,7 +613,9 @@ client.on("interactionCreate", async interaction => {
         .setDescription(`${amount} mesaj silindi.`)
         .setColor("Blue");
 
-      await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
+      if (config?.modLogChannelId) {
+        await sendLog(config.modLogChannelId, embed);
+      }
 
       return interaction.reply({
         content: `${amount} mesaj silindi.`,
@@ -531,7 +638,9 @@ client.on("interactionCreate", async interaction => {
         .setDescription(`${user.tag} timeout aldı.`)
         .setColor("Purple");
 
-      await sendLog(process.env.MOD_LOG_CHANNEL_ID, embed);
+      if (config?.modLogChannelId) {
+        await sendLog(config.modLogChannelId, embed);
+      }
 
       return interaction.reply(`${user.tag} timeout aldı.`);
     }
@@ -596,7 +705,7 @@ client.login(process.env.TOKEN);
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("Moderasyon botu aktif!");
+  res.send("Moderasyon botu global olarak aktif!");
 });
 
 const PORT = process.env.PORT || 3000;
